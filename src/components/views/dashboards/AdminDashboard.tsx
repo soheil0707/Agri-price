@@ -8,6 +8,7 @@ export function AdminDashboard() {
   const {
     currentPersona,
     listings,
+    orders,
     setActiveTab,
     databaseListingCount,
     platformTelemetry,
@@ -52,27 +53,48 @@ export function AdminDashboard() {
     },
   ];
 
-  // Escrow Milestone Audits
-  const escrowAudits = [
-    {
-      id: 'ESC-AUD-991',
-      orderNumber: 'AGP-ORD-2026-881',
-      commodity: 'Potato (6,000 kg)',
-      amount: 126000.0,
-      currentMilestone: 'In Transit — 40% Advance Released',
-      nextMilestone: 'Destination Quality Clearance (60% Settlement)',
-      riskLevel: 'Low (Reefer Monitored)',
-    },
-    {
-      id: 'ESC-AUD-992',
-      orderNumber: 'AGP-ORD-2026-879',
-      commodity: 'Onion (2,000 kg)',
-      amount: 68000.0,
-      currentMilestone: 'Delivered & Inspected — 100% Payout Settled',
-      nextMilestone: 'Ledger Reconciled',
-      riskLevel: 'Zero (Settled)',
-    },
-  ];
+  // Escrow Milestone Audits derived dynamically from live orders state
+  const escrowAudits = orders.map((ord) => {
+    let currentMilestone = 'Awaiting Escrow Deposit';
+    let nextMilestone = 'Buyer Escrow Funding';
+    let riskLevel = 'Low (Pending Funding)';
+
+    if (ord.escrowStatus === 'escrow_funded') {
+      currentMilestone = 'Escrow Funded & Locked';
+      nextMilestone = 'Logistics Dispatch & 40% Advance';
+      riskLevel = 'Low (Escrow Secured)';
+    } else if (ord.escrowStatus === 'in_transit') {
+      currentMilestone = 'In Transit — 40% Advance Released';
+      nextMilestone = 'Destination Quality Clearance (60% Settlement)';
+      riskLevel = 'Low (Reefer Monitored)';
+    } else if (ord.escrowStatus === 'delivered_inspected') {
+      currentMilestone = 'Delivered & Inspected';
+      nextMilestone = 'Final Proceeds Disbursement';
+      riskLevel = 'Zero (Quality Accepted)';
+    } else if (ord.escrowStatus === 'settled') {
+      currentMilestone = '100% Payout Settled';
+      nextMilestone = 'Ledger Reconciled';
+      riskLevel = 'Zero (Settled)';
+    } else if (ord.escrowStatus === 'cancelled') {
+      currentMilestone = 'Cancelled — Escrow Released';
+      nextMilestone = 'Inventory Restored to Listing';
+      riskLevel = 'Zero (Cancelled)';
+    } else if (ord.escrowStatus === 'disputed') {
+      currentMilestone = 'Disputed — Escrow Frozen';
+      nextMilestone = 'Administrative Ruling Pending';
+      riskLevel = 'High (Active Arbitration)';
+    }
+
+    return {
+      id: `ESC-AUD-${ord.orderNumber.replace('AGP-ORD-', '')}`,
+      orderNumber: ord.orderNumber,
+      commodity: `${ord.commodity} (${ord.lockedQuantityKg.toLocaleString('en-IN')} kg)`,
+      amount: ord.totalAgreedAmount,
+      currentMilestone,
+      nextMilestone,
+      riskLevel,
+    };
+  });
 
   return (
     <div className="space-y-6" data-testid="dashboard-admin">

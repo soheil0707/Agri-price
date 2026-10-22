@@ -33,12 +33,23 @@ export function FarmerDashboard({ onOpenNewListingModal }: DashboardProps) {
   );
   const pendingBuyerOffers = farmerOffers.filter((o) => o.status === 'pending');
 
+  const isCurrentFarmerOrder = (o: (typeof orders)[number]) =>
+    o.sellerId === currentPersona.id ||
+    o.sellerName.toLowerCase().includes(currentPersona.name.toLowerCase().split(' ')[0]) ||
+    (currentPersona.role === 'farmer' && o.sellerDistrict.toLowerCase() === currentPersona.district.toLowerCase());
+
   const upcomingPickups = orders.filter(
-    (o) => o.sellerId === currentPersona.id || o.sellerName.includes('Ramesh') || o.escrowStatus !== 'settled'
+    (o) =>
+      isCurrentFarmerOrder(o) &&
+      (o.escrowStatus === 'escrow_funded' || o.escrowStatus === 'in_transit')
   );
 
   const settledProceeds = payments
-    .filter((p) => p.eventType === 'farmer_proceeds_settled' || p.eventType === 'dispatch_advance_released')
+    .filter((p) => {
+      const relatedOrder = orders.find((o) => o.id === p.orderId || o.orderNumber === p.orderNumber);
+      if (relatedOrder && relatedOrder.escrowStatus === 'cancelled') return false;
+      return p.eventType === 'farmer_proceeds_settled' || p.eventType === 'dispatch_advance_released';
+    })
     .reduce((sum, p) => sum + p.amount, 0);
 
   return (

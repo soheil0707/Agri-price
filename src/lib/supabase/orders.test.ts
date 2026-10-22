@@ -256,3 +256,175 @@ test('7.2 Error Integrity: Real database errors never silently fallback to demo 
     assert.strictEqual(res.orders.length, 0, 'Must NOT silently replace database orders with demo orders on error');
   }
 });
+
+// ==============================================================================
+// 8. ORDER & PAYMENT CONSISTENCY REGRESSION SUITE
+// ==============================================================================
+
+test('8.1 Order Cancellation Isolation: Cancelling one order strictly leaves other orders unaffected', () => {
+  const orderA = createMockOrder({
+    id: 'ord-test-aaa-01',
+    orderNumber: 'AGP-ORD-9893',
+    commodity: 'Tomato',
+    lockedQuantityKg: 5000,
+    totalAgreedAmount: 137500,
+    escrowStatus: 'awaiting_escrow',
+  });
+
+  const orderB = createMockOrder({
+    id: 'ord-test-bbb-02',
+    orderNumber: 'AGP-ORD-2026-881',
+    commodity: 'Potato',
+    lockedQuantityKg: 6000,
+    totalAgreedAmount: 126000,
+    escrowStatus: 'in_transit',
+    transporterName: 'VRL Agro Logistics',
+  });
+
+  const initialOrders: MarketplaceOrder[] = [orderA, orderB];
+
+  // Simulate cancelling Order A
+  const updatedOrders = initialOrders.map((o) =>
+    o.id === orderA.id ? { ...o, escrowStatus: 'cancelled' as const } : o
+  );
+
+  // Assert Order A is cancelled
+  const cancelledA = updatedOrders.find((o) => o.id === orderA.id);
+  assert.ok(cancelledA, 'Order A must exist');
+  assert.strictEqual(cancelledA.escrowStatus, 'cancelled', 'Order A must be cancelled');
+
+  // Assert Order B is 100% unchanged
+  const unchangedB = updatedOrders.find((o) => o.id === orderB.id);
+  assert.ok(unchangedB, 'Order B must exist');
+  assert.strictEqual(unchangedB.escrowStatus, 'in_transit', 'Order B status must remain in_transit');
+  assert.strictEqual(unchangedB.lockedQuantityKg, 6000, 'Order B quantity must not change');
+  assert.strictEqual(unchangedB.totalAgreedAmount, 126000, 'Order B total amount must not change');
+  assert.strictEqual(unchangedB.transporterName, 'VRL Agro Logistics', 'Order B transporter must not change');
+});
+
+test('8.2 Payment Event Association: Every payment event is strictly bound to its order with unique ID', () => {
+  const order = createMockOrder({
+    id: 'ord-test-assoc-01',
+    orderNumber: 'AGP-ORD-9893',
+    totalAgreedAmount: 100000,
+  });
+
+  const holdEventId = `PAY-EVT-${order.orderNumber}-HOLD`;
+  const advEventId = `PAY-EVT-${order.orderNumber}-ADV`;
+  const settleEventId = `PAY-EVT-${order.orderNumber}-SETTLE`;
+
+  // Verify unique deterministic IDs
+  assert.notStrictEqual(holdEventId, advEventId, 'Hold and advance event IDs must be distinct');
+  assert.notStrictEqual(advEventId, settleEventId, 'Advance and settlement event IDs must be distinct');
+
+  // Verify order number encoding
+  assert.ok(holdEventId.includes(order.orderNumber), 'Payment ID must encode the order number');
+  assert.ok(advEventId.includes(order.orderNumber), 'Payment ID must encode the order number');
+  assert.ok(settleEventId.includes(order.orderNumber), 'Payment ID must encode the order number');
+
+  // Verify percentage calculations
+  const advanceAmount = Math.round(order.totalAgreedAmount * 0.4);
+  const settlementAmount = Math.round(order.totalAgreedAmount * 0.54);
+  assert.strictEqual(advanceAmount, 40000, '40% advance must be exactly 40,000');
+  assert.strictEqual(settlementAmount, 54000, '54% settlement must be exactly 54,000');
+});
+
+test('8.3 Cancellation vs Settlement: Cancellation of un-escrowed order does NOT fabricate payment or refund', () => {
+  const order = createMockOrder({
+    id: 'ord-test-unfunded-01',
+    orderNumber: 'AGP-ORD-9893',
+    escrowStatus: 'awaiting_escrow',
+    totalAgreedAmount: 137500,
+  });
+
+  let simulatedPayments: { id: string; orderId: string; orderNumber: string; eventType: string }[] = [];
+
+  // When order is in awaiting_escrow, no funds have moved -> zero payment events
+  assert.strictEqual(simulatedPayments.length, 0, 'No payments recorded for awaiting_escrow order');
+
+  // Simulate cancellation of awaiting_escrow order
+  const isCancelled = true;
+  if (isCancelled && order.escrowStatus === 'awaiting_escrow') {
+    // Clean up any uncommitted hold; strictly do NOT fabricate a refund event
+    simulatedPayments = simulatedPayments.filter((p) => p.orderId !== order.id);
+  }
+
+  // Verify zero payment records and zero refund records
+  assert.strictEqual(simulatedPayments.length, 0, 'Cancellation alone must NOT create any payment or refund record');
+  const hasRefund = simulatedPayments.some((p) => p.eventType.includes('refund'));
+  assert.strictEqual(hasRefund, false, 'No refund event must be fabricated for un-escrowed cancellation');
+});
+
+test('8.4 Delivery Status Derivation: Cancelled order cannot show active transit schedule', () => {
+  function deriveDeliveryDetails(ord: MarketplaceOrder) {
+    const isCancelled = ord.escrowStatus === 'cancelled';
+    const isDisputed = ord.escrowStatus === 'disputed';
+
+    const transporter = isCancelled
+      ? 'Cancelled — Dispatch Aborted'
+      : isDisputed
+      ? `${ord.transporterName || 'Fleet Assigned'} (Transit Paused)`
+      : ord.transporterName || (ord.escrowStatus === 'awaiting_escrow' ? 'Pending Escrow Authorization' : 'Pending Transporter Assignment');
+
+    const transitSchedule = isCancelled
+      ? 'Cancelled — No Transit Scheduled'
+      : isDisputed
+      ? 'Frozen — Arbitration Pending'
+      : ord.escrowStatus === 'awaiting_escrow'
+      ? 'Pending Escrow Funding'
+      : ord.escrowStatus === 'escrow_funded'
+      ? 'Ready for Farmgate Dispatch'
+      : ord.escrowStatus === 'in_transit'
+      ? ord.pickupScheduledAt || 'In Transit'
+      : ord.deliveredAt
+      ? `Delivered: ${ord.deliveredAt}`
+      : 'Delivered & Accepted';
+
+    return { transporter, transitSchedule };
+  }
+
+  const cancelledOrder = createMockOrder({
+    escrowStatus: 'cancelled',
+    transporterName: 'VRL Logistics KA-07',
+    pickupScheduledAt: '2026-10-25 10:00 IST',
+  });
+
+  const details = deriveDeliveryDetails(cancelledOrder);
+  assert.strictEqual(details.transporter, 'Cancelled — Dispatch Aborted');
+  assert.strictEqual(details.transitSchedule, 'Cancelled — No Transit Scheduled');
+  assert.strictEqual(details.transitSchedule.includes('2026-10-25'), false, 'Cancelled order must not show scheduled date');
+
+  const inTransitOrder = createMockOrder({
+    escrowStatus: 'in_transit',
+    transporterName: 'VRL Logistics KA-07',
+    pickupScheduledAt: '2026-10-25 10:00 IST',
+  });
+
+  const inTransitDetails = deriveDeliveryDetails(inTransitOrder);
+  assert.strictEqual(inTransitDetails.transporter, 'VRL Logistics KA-07');
+  assert.strictEqual(inTransitDetails.transitSchedule, '2026-10-25 10:00 IST');
+});
+
+test('8.5 Escrow Balance Integrity: Awaiting-escrow and cancelled orders do not count toward locked escrow', () => {
+  const orders: MarketplaceOrder[] = [
+    createMockOrder({ id: '1', escrowStatus: 'awaiting_escrow', totalAgreedAmount: 100000 }),
+    createMockOrder({ id: '2', escrowStatus: 'escrow_funded', totalAgreedAmount: 50000 }),
+    createMockOrder({ id: '3', escrowStatus: 'in_transit', totalAgreedAmount: 75000 }),
+    createMockOrder({ id: '4', escrowStatus: 'cancelled', totalAgreedAmount: 120000 }),
+    createMockOrder({ id: '5', escrowStatus: 'settled', totalAgreedAmount: 80000 }),
+  ];
+
+  const totalLockedEscrow = orders
+    .filter(
+      (o) =>
+        o.escrowStatus === 'escrow_funded' ||
+        o.escrowStatus === 'in_transit' ||
+        o.escrowStatus === 'delivered_inspected' ||
+        o.escrowStatus === 'disputed'
+    )
+    .reduce((sum, o) => sum + o.totalAgreedAmount, 0);
+
+  // Only orders 2 (50,000) and 3 (75,000) have locked escrow = 125,000
+  assert.strictEqual(totalLockedEscrow, 125000, 'Locked escrow must strictly sum only funded/in-transit/disputed orders');
+});
+

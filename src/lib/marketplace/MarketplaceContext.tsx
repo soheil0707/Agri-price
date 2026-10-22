@@ -1434,24 +1434,7 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
     setOrders((prev) => [newOrder, ...prev]);
 
-    // 4. Log Simulated Escrow Payment Authorization
-    const paymentRecord: SimulatedPaymentRecord = {
-      id: `PAY-EVT-${Date.now().toString().slice(-4)}`,
-      orderId: newOrder.id,
-      orderNumber: newOrder.orderNumber,
-      eventType: 'escrow_hold_authorized',
-      eventTitle: `Escrow Hold Authorized for ${newOrder.orderNumber}`,
-      amount: totalAgreed,
-      currency: 'INR',
-      idempotencyKey: `idemp-hold-${newOrder.id}-${Date.now()}`,
-      payloadHash: `sha256:sim-${Math.random().toString(36).substring(2, 15)}`,
-      sourceAccount: `${offer.buyerOrganization} Settlement A/C`,
-      destinationAccount: 'AgriPrice Escrow Trust Vault',
-      ledgerState: 'COMMITTED',
-      recordedAt: new Date().toISOString(),
-    };
-
-    setPayments((prev) => [paymentRecord, ...prev]);
+    // Note: Escrow hold payment event is logged when buyer locks escrow deposit via advanceOrderStatus
 
     addNotification(
       'Offer Accepted & Inventory Reserved (Demo)',
@@ -1607,6 +1590,21 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
     if (order.escrowStatus === 'awaiting_escrow') {
       nextStatus = 'escrow_funded';
       message = 'Escrow deposit fully verified and locked in trust account.';
+      paymentEvent = {
+        id: `PAY-EVT-${order.orderNumber}-HOLD`,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        eventType: 'escrow_hold_authorized',
+        eventTitle: `Escrow Hold Secured for ${order.orderNumber}`,
+        amount: order.totalAgreedAmount,
+        currency: 'INR',
+        idempotencyKey: `idemp-hold-${order.id}-${order.orderNumber}`,
+        payloadHash: `sha256:sim-${Math.random().toString(36).substring(2, 15)}`,
+        sourceAccount: `${order.buyerOrganization || 'Buyer'} Settlement A/C`,
+        destinationAccount: 'AgriPrice Escrow Trust Vault',
+        ledgerState: 'COMMITTED',
+        recordedAt: new Date().toISOString(),
+      };
       addNotification(
         'Escrow Deposit Locked (Demo)',
         `Buyer funded ₹${order.totalAgreedAmount.toLocaleString('en-IN')} into escrow trust for ${order.orderNumber}. Dispatch authorization issued.`,
@@ -1620,14 +1618,14 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       // Log 40% dispatch advance payment
       const advanceAmount = Math.round(order.totalAgreedAmount * 0.4);
       paymentEvent = {
-        id: `PAY-EVT-${Date.now().toString().slice(-4)}`,
+        id: `PAY-EVT-${order.orderNumber}-ADV`,
         orderId: order.id,
         orderNumber: order.orderNumber,
         eventType: 'dispatch_advance_released',
         eventTitle: `Dispatch Advance Released (40% of ${order.orderNumber})`,
         amount: advanceAmount,
         currency: 'INR',
-        idempotencyKey: `idemp-adv-${order.id}-${Date.now()}`,
+        idempotencyKey: `idemp-adv-${order.id}-${order.orderNumber}`,
         payloadHash: `sha256:sim-${Math.random().toString(36).substring(2, 15)}`,
         sourceAccount: 'AgriPrice Escrow Trust Vault',
         destinationAccount: `${order.sellerName} Bank A/C`,
@@ -1656,14 +1654,14 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
       message = 'Order completed! Final net proceeds settled to farmer bank account.';
       const finalSettlementAmount = Math.round(order.totalAgreedAmount * 0.54); // remaining after deductions
       paymentEvent = {
-        id: `PAY-EVT-${Date.now().toString().slice(-4)}`,
+        id: `PAY-EVT-${order.orderNumber}-SETTLE`,
         orderId: order.id,
         orderNumber: order.orderNumber,
         eventType: 'farmer_proceeds_settled',
         eventTitle: `Final Farmer Proceeds Settlement for ${order.orderNumber}`,
         amount: finalSettlementAmount,
         currency: 'INR',
-        idempotencyKey: `idemp-settle-${order.id}-${Date.now()}`,
+        idempotencyKey: `idemp-settle-${order.id}-${order.orderNumber}`,
         payloadHash: `sha256:sim-${Math.random().toString(36).substring(2, 15)}`,
         sourceAccount: 'AgriPrice Escrow Trust Vault',
         destinationAccount: `${order.sellerName} Bank A/C`,
@@ -1756,6 +1754,11 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
 
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'cancelled' } : o))
+    );
+
+    // Clean up any pending uncommitted holds; cancellation alone must not fabricate a payment or refund
+    setPayments((prev) =>
+      prev.filter((p) => p.orderId !== orderId && p.orderNumber !== order.orderNumber)
     );
 
     addNotification(

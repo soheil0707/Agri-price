@@ -21,8 +21,9 @@ export function ProcessorDashboard() {
     (o) => o.buyerId === currentPersona.id || o.buyerOrganization.includes('AgroPure') || o.buyerName.includes('Anita')
   );
 
-  const totalProcuredKg = myProcurementOrders.reduce((sum, o) => sum + o.lockedQuantityKg, 0);
-  const totalAgreedSpend = myProcurementOrders.reduce((sum, o) => sum + o.totalAgreedAmount, 0);
+  const activeProcurementOrders = myProcurementOrders.filter((o) => o.escrowStatus !== 'cancelled');
+  const totalProcuredKg = activeProcurementOrders.reduce((sum, o) => sum + o.lockedQuantityKg, 0);
+  const totalAgreedSpend = activeProcurementOrders.reduce((sum, o) => sum + o.totalAgreedAmount, 0);
 
   // Available industrial processing grade produce
   const processingGradeListings = listings.filter(
@@ -374,7 +375,13 @@ export function ProcessorDashboard() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">{ord.orderNumber}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        ord.escrowStatus === 'cancelled'
+                          ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                      }`}
+                    >
                       {ord.escrowStatus.replace('_', ' ')}
                     </span>
                   </div>
@@ -387,8 +394,12 @@ export function ProcessorDashboard() {
                     </span>
                   </div>
                   <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-200/50 dark:border-zinc-700/50 flex items-center justify-between">
-                    <span>Transporter: {ord.transporterName}</span>
-                    <span>Intake Yard: Plant-1 (Hosur)</span>
+                    <span>
+                      Transporter: {ord.escrowStatus === 'cancelled' ? 'None (Cancelled)' : ord.transporterName || 'Pending'}
+                    </span>
+                    <span>
+                      {ord.escrowStatus === 'cancelled' ? 'Delivery Aborted' : 'Intake Yard: Plant-1 (Hosur)'}
+                    </span>
                   </div>
                 </div>
               ))}

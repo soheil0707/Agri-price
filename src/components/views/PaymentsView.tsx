@@ -21,7 +21,13 @@ export function PaymentsView() {
     .reduce((sum, p) => sum + p.amount, 0);
 
   const totalInEscrow = orders
-    .filter((o) => o.escrowStatus !== 'settled' && o.escrowStatus !== 'cancelled')
+    .filter(
+      (o) =>
+        o.escrowStatus === 'escrow_funded' ||
+        o.escrowStatus === 'in_transit' ||
+        o.escrowStatus === 'delivered_inspected' ||
+        o.escrowStatus === 'disputed'
+    )
     .reduce((sum, o) => sum + o.totalAgreedAmount, 0);
 
   const getEventTypeBadgeClass = (eventType: string) => {
@@ -34,6 +40,8 @@ export function PaymentsView() {
         return 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-300 dark:border-purple-700';
       case 'farmer_proceeds_settled':
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700';
+      case 'dispute_refund_processed':
+        return 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300 dark:border-rose-700';
       default:
         return 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700';
     }

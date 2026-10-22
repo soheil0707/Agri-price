@@ -336,7 +336,13 @@ export function RetailerDashboard() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">{ord.orderNumber}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        ord.escrowStatus === 'cancelled'
+                          ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      }`}
+                    >
                       {ord.escrowStatus.replace('_', ' ')}
                     </span>
                   </div>
@@ -349,7 +355,16 @@ export function RetailerDashboard() {
                     </span>
                   </div>
                   <div className="text-[10px] text-zinc-500 pt-1 border-t border-zinc-200/50 dark:border-zinc-700/50 flex items-center justify-between">
-                    <span>Delivered At: {ord.deliveredAt || 'Scheduled Today'}</span>
+                    <span>
+                      Delivery Status:{' '}
+                      {ord.escrowStatus === 'cancelled'
+                        ? 'Cancelled — No Delivery'
+                        : ord.escrowStatus === 'settled' || ord.escrowStatus === 'delivered_inspected'
+                        ? ord.deliveredAt ? `Delivered: ${ord.deliveredAt}` : 'Delivered & Accepted'
+                        : ord.escrowStatus === 'in_transit'
+                        ? 'In Transit — Scheduled Today'
+                        : 'Awaiting Escrow Deposit'}
+                    </span>
                     <span>Store: FreshBite Hub Mysuru</span>
                   </div>
                 </div>

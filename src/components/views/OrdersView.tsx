@@ -443,14 +443,30 @@ export function OrdersView() {
                   <div>
                     <span className="text-[10px] text-zinc-500 block">Logistics Transporter</span>
                     <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                      {ord.transporterName || 'Pending Transporter Assignment'}
+                      {isCancelled
+                        ? 'Cancelled — Dispatch Aborted'
+                        : isDisputed
+                        ? `${ord.transporterName || 'Fleet Assigned'} (Transit Paused)`
+                        : ord.transporterName || (ord.escrowStatus === 'awaiting_escrow' ? 'Pending Escrow Authorization' : 'Pending Transporter Assignment')}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-[10px] text-zinc-500 block">Pickup &amp; Transit Schedule</span>
                     <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                      {ord.pickupScheduledAt || 'Immediate Dispatch'}
+                      {isCancelled
+                        ? 'Cancelled — No Transit Scheduled'
+                        : isDisputed
+                        ? 'Frozen — Arbitration Pending'
+                        : ord.escrowStatus === 'awaiting_escrow'
+                        ? 'Pending Escrow Funding'
+                        : ord.escrowStatus === 'escrow_funded'
+                        ? 'Ready for Farmgate Dispatch'
+                        : ord.escrowStatus === 'in_transit'
+                        ? ord.pickupScheduledAt || 'In Transit'
+                        : ord.deliveredAt
+                        ? `Delivered: ${ord.deliveredAt}`
+                        : 'Delivered & Accepted'}
                     </span>
                   </div>
                 </div>
