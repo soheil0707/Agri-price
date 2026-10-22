@@ -6,14 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test src/lib/calculator/engine.test.ts src/lib/marketplace/personaDashboards.test.ts src/lib/supabase/roleOnboarding.test.ts src/lib/supabase/offers.test.ts src/lib/supabase/orders.test.ts src/lib/supabase/storage.test.ts src/lib/supabase/notifications_disputes.test.ts src/lib/supabase/intelligence_analytics.test.ts src/lib/supabase/auth_modes.test.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
